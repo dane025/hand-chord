@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Hand Chord Dial — 손 회전 코드 연주</title>
+<style>
+  :root{
+    --bg:#0b0c10; --panel:rgba(18,20,26,.88); --line:rgba(255,255,255,.12);
+    --text:#eef0f4; --dim:#9aa3b2; --accent:#7cf0c5; --accent2:#ffb86b; --danger:#ff6b81;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:"Pretendard","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;overflow:hidden;
+    -webkit-user-select:none;user-select:none}
+  #stage{position:fixed;inset:0;touch-action:none}
+  video{display:none}
+  #bar{position:fixed;top:12px;left:12px;right:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;pointer-events:none;z-index:5}
+  #bar > *{pointer-events:auto}
+  .brand{font-weight:800;padding:8px 12px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
+  .brand small{color:var(--dim);font-weight:500;margin-left:6px}
+  .grp{display:flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px;align-items:center}
+  .grp label{font-size:12px;color:var(--dim);padding:0 6px}
+  button{font:inherit;font-size:13px;color:var(--text);background:transparent;border:0;padding:7px 10px;border-radius:7px;cursor:pointer}
+  button:hover{background:rgba(255,255,255,.08)}
+  .seg button.on{background:var(--accent);color:#0b0c10;font-weight:700}
+  .spacer{flex:1}
+  #editBtn.on,#calibBtn.on{background:var(--accent2);color:#0b0c10;font-weight:700}
+
+  #hud{position:fixed;left:12px;bottom:12px;display:flex;gap:8px;z-index:5}
+  .meter{width:170px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .meter .t{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-bottom:6px}
+  .meter .t b{color:var(--text)}
+  .track{height:8px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden}
+  .fill{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+
+  .pop{position:fixed;right:12px;top:64px;width:290px;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:14px;z-index:6;display:none;max-height:calc(100% - 80px);overflow:auto}
+  .pop.show{display:block}
+  .pop h3{margin:0 0 8px;font-size:14px}
+  .row{margin:10px 0}
+  .row > span{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-bottom:6px}
+  .row > span output{color:var(--text)}
+  .chips{display:flex;flex-wrap:wrap;gap:4px}
+  .chips button{background:rgba(255,255,255,.06);padding:6px 8px;min-width:34px}
+  .chips button.on{background:var(--accent);color:#0b0c10;font-weight:700}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  .btns{display:flex;gap:6px;flex-wrap:wrap}
+  .btns button{background:rgba(255,255,255,.08)}
+  .del{color:var(--danger)}
+  .hint{font-size:12px;color:var(--dim);line-height:1.55}
+  .hint b{color:var(--text)}
+  #list{display:flex;flex-wrap:wrap;gap:4px}
+  #list button{background:rgba(255,255,255,.06);font-weight:700;min-width:44px}
+  #list button.on{outline:2px solid #fff}
+
+  #start{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:20;
+    background:radial-gradient(ellipse at center,#161a22 0%,#0b0c10 70%)}
+  #start .card{max-width:460px;padding:28px;text-align:center}
+  #start h1{font-size:30px;margin:0 0 8px}
+  #start p{color:var(--dim);line-height:1.6;font-size:14px;margin:0}
+  #start ol{text-align:left;color:var(--dim);font-size:13px;line-height:1.8;padding-left:20px;margin:16px 0 22px}
+  #start ol b{color:var(--text)}
+  #go{background:var(--accent);color:#0b0c10;font-weight:800;font-size:16px;padding:12px 28px;border-radius:12px}
+  #status{margin-top:14px;font-size:13px;color:var(--accent2);min-height:20px}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv"></canvas></div>
+<video id="vid" playsinline muted></video>
+
+<div id="bar">
+  <div class="brand">Hand Chord Dial</div>
+  <div class="grp seg" id="waveSeg">
+    <label>파형</label>
+    <button data-v="sine">Sine</button><button data-v="triangle">Tri</button>
+    <button data-v="sawtooth">Saw</button><button data-v="square">Sq</button>
+  </div>
+  <div class="grp seg" id="octSeg">
+    <label>옥타브</label>
+    <button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5</button>
+  </div>
+  <div class="grp" id="keyGrp">
+    <label>키</label>
+    <button id="keyDown" title="반음 내리기 ( [ )">−</button>
+    <b id="keyLbl" style="min-width:56px;text-align:center;font-size:13px">C</b>
+    <button id="keyUp" title="반음 올리기 ( ] )">＋</button>
+    <button id="keyReset" title="원래 키로" style="color:var(--dim)">↺</button>
+  </div>
+  <div class="grp">
+    <label>리버브</label><input id="rev" type="range" min="0" max="1" step="0.01" style="width:90px">
+  </div>
+  <div class="spacer"></div>
+  <div class="grp">
+    <button id="calibBtn">손 보정</button>
+    <button id="editBtn">✎ 코드 편집</button>
+  </div>
+</div>
+
+<div id="hud">
+  <div class="meter"><div class="t">코드 <b id="hChord">—</b></div><div class="t" style="margin:0">각도 <b id="hAng">—</b></div></div>
+  <div class="meter"><div class="t">볼륨(펼침) <b id="hLv">—</b></div><div class="track"><div class="fill" id="lvFill"></div></div></div>
+</div>
+
+<!-- calibration -->
+<div class="pop" id="calib">
+  <h3>손 보정</h3>
+  <div class="hint">손을 편하게 세운 상태에서 좌우로 비틀어 끝 각도를 잡아 주세요.<br>현재 각도 <b id="cAngNow">—</b> · 현재 펼침 <b id="cOpenNow">—</b></div>
+  <div class="row btns" style="margin-top:10px">
+    <button id="setLeft">지금 = 왼쪽 끝</button><button id="setRight">지금 = 오른쪽 끝</button>
+  </div>
+  <div class="row"><span>왼쪽 끝 각도 <output id="oLeft"></output></span><input id="aLeft" type="range" min="-150" max="0" step="1"></div>
+  <div class="row"><span>오른쪽 끝 각도 <output id="oRight"></output></span><input id="aRight" type="range" min="0" max="150" step="1"></div>
+  <div class="row"><span>경계 여유(떨림 방지) <output id="oHys"></output></span><input id="hys" type="range" min="0" max="0.45" step="0.01"></div>
+  <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:4px"></div>
+  <div class="row btns"><button id="setFist">지금 손 = 주먹</button><button id="setOpen">지금 손 = 편 손</button></div>
+  <div class="row"><span>주먹 기준값 <output id="oMin"></output></span><input id="cMin" type="range" min="0.8" max="1.8" step="0.01"></div>
+  <div class="row"><span>편 손 기준값 <output id="oMax"></output></span><input id="cMax" type="range" min="1.3" max="2.6" step="0.01"></div>
+  <div class="row"><span>볼륨 곡선 <output id="oCurve"></output></span><input id="cCurve" type="range" min="0.5" max="3" step="0.05"></div>
+</div>
+
+<!-- chord editor -->
+<div class="pop" id="panel">
+  <h3>부채꼴 코드 편집</h3>
+  <div class="hint">왼쪽 칸부터 순서대로 배치됩니다. 칸을 고른 뒤 루트·종류를 바꾸세요. 부채꼴의 칸을 직접 클릭해도 선택되고, 클릭하면 소리도 들어볼 수 있어요.</div>
+  <div class="row"><span>부채꼴 위치·크기</span>
+    <div class="hint" style="margin-bottom:6px">편집 중에는 부채꼴을 <b>드래그해서 이동</b>, <b>마우스 휠로 크기</b>를 바꿀 수 있어요.</div>
+  </div>
+  <div class="row"><span>가로 위치 <output id="oFanX"></output></span><input id="fanX" type="range" min="0" max="1" step="0.005"></div>
+  <div class="row"><span>세로 위치 <output id="oFanY"></output></span><input id="fanY" type="range" min="0" max="1" step="0.005"></div>
+  <div class="row"><span>크기 <output id="oFanSize"></output></span><input id="fanSize" type="range" min="0.15" max="1.2" step="0.005"></div>
+  <div class="row"><span>안쪽 구멍 <output id="oFanInner"></output></span><input id="fanInner" type="range" min="0" max="0.85" step="0.01"></div>
+  <div class="row btns"><button id="fanReset">위치·크기 초기화</button></div>
+  <div style="border-top:1px solid var(--line);margin:12px 0 4px"></div>
+  <div class="row"><span>코드 순서</span><div id="list"></div></div>
+  <div class="row btns">
+    <button id="addBefore">◀ 앞에 추가</button><button id="addAfter">뒤에 추가 ▶</button>
+    <button class="del" id="delChord">삭제</button>
+  </div>
+  <div class="row btns"><button id="moveL">← 이동</button><button id="moveR">이동 →</button></div>
+  <div class="row"><span>루트</span><div class="chips" id="rootChips"></div></div>
+  <div class="row"><span>종류</span><div class="chips" id="qualChips"></div></div>
+  <div class="row"><span>프리셋</span>
+    <div class="btns">
+      <button data-preset="diatonic">다이아토닉</button>
+      <button data-preset="pop">팝 진행</button>
+      <button data-preset="jazz">재즈 ii-V-I</button>
+      <button data-preset="minor">마이너</button>
+    </div>
+  </div>
+  <div class="hint" style="border-top:1px solid var(--line);padding-top:10px">설정은 이 브라우저에 자동 저장됩니다.</div>
+</div>
+
+<div id="start">
+  <div class="card">
+    <h1>Hand Chord Dial</h1>
+    <p>한 손으로, 다이얼을 돌리듯 코드를 연주합니다.</p>
+    <ol>
+      <li>손바닥을 카메라 쪽으로 세워 보여주세요.</li>
+      <li><b>손을 좌우로 회전</b>하면 부채꼴 안의 바늘이 따라 돌며 코드가 바뀝니다.</li>
+      <li><b>손을 펼칠수록 크게</b>, 주먹을 쥐면 소리가 꺼집니다.</li>
+      <li>처음엔 <b>손 보정</b>에서 회전 범위와 펼침을 맞춰 주세요.</li>
+    </ol>
+    <button id="go">카메라 켜고 시작</button>
+    <div id="status"></div>
+  </div>
+</div>
+
+<script type="module">
+/* ================= settings ================= */
+const LS_KEY = 'handchord.dial.v1';
+const NOTE_NAMES = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+const QUALITIES = {
+  '':[0,4,7], 'm':[0,3,7], '7':[0,4,7,10], 'maj7':[0,4,7,11], 'm7':[0,3,7,10],
+  'sus2':[0,2,7], 'sus4':[0,5,7], 'add9':[0,4,7,14], '6':[0,4,7,9], 'm9':[0,3,7,10,14],
+  'dim':[0,3,6], 'm7b5':[0,3,6,10], 'aug':[0,4,8],
+};
+const COLORS = ['#7cf0c5','#ffb86b','#8fb4ff','#ff7eb6','#c9a2ff','#f6e27a','#6be0ff','#ff8a6b'];
+const PRESETS = {
+  diatonic: [[0,''],[2,'m'],[4,'m'],[5,''],[7,''],[9,'m']],
+  pop:      [[9,'m'],[5,''],[0,''],[7,'']],
+  jazz:     [[2,'m7'],[7,'7'],[0,'maj7'],[9,'m7'],[4,'m7'],[5,'maj7']],
+  minor:    [[9,'m'],[2,'m'],[4,'7'],[5,''],[7,''],[0,'']],
+};
+const mk = arr => arr.map(([root,q])=>({root,q}));
+
+const state = {
+  chords: mk(PRESETS.diatonic),
+  wave:'triangle', octave:3, reverb:0.35, transpose:0,
+  aLeft:-65, aRight:65, hys:0.18,
+  fanX:0.5, fanY:0.86, fanSize:0.62, fanInner:0.34,
+  cMin:1.15, cMax:1.85, cCurve:1.6,
+};
+try{ const s = JSON.parse(localStorage.getItem(LS_KEY)||'null'); if (s) Object.assign(state, s); }catch(e){}
+const save = ()=>{ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} };
+const T = ()=>state.transpose||0;
+const mod12 = n => ((n%12)+12)%12;
+const chordName = c => NOTE_NAMES[mod12(c.root+T())] + c.q;
+
+/* ================= audio ================= */
+let ac, master, dry, wet;
+function initAudio(){
+  ac = new (window.AudioContext||window.webkitAudioContext)();
+  const comp = ac.createDynamicsCompressor(); comp.threshold.value=-14; comp.ratio.value=4;
+  master = ac.createGain(); master.gain.value = .8;
+  dry = ac.createGain(); wet = ac.createGain();
+  const conv = ac.createConvolver();
+  const len = ac.sampleRate*2.6, buf = ac.createBuffer(2,len,ac.sampleRate);
+  for (let ch=0;ch<2;ch++){ const d=buf.getChannelData(ch); for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.8); }
+  conv.buffer = buf;
+  master.connect(dry).connect(comp); master.connect(conv).connect(wet).connect(comp);
+  comp.connect(ac.destination); setReverb();
+}
+function setReverb(){ if(!ac) return; dry.gain.setTargetAtTime(1-state.reverb*.5,ac.currentTime,.05); wet.gain.setTargetAtTime(state.reverb*.9,ac.currentTime,.05); }
+const mtof = m => 440*Math.pow(2,(m-69)/12);
+
+class Voice{
+  constructor(ch){
+    const base = 12*(state.octave+1)+ch.root+T();
+    const notes = [base-12, ...(QUALITIES[ch.q]||QUALITIES['']).map(i=>base+i)];
+    this.out = ac.createGain(); this.out.gain.value = 0;
+    this.f = ac.createBiquadFilter(); this.f.type='lowpass'; this.f.Q.value=.7; this.f.frequency.value=800;
+    this.f.connect(this.out).connect(master);
+    this.oscs=[];
+    const per = .22/Math.sqrt(notes.length), hard = (state.wave==='square'||state.wave==='sawtooth')?.55:1;
+    notes.forEach((m,i)=>{
+      for (const det of (state.wave==='sine'?[0]:[-6,6])){
+        const o=ac.createOscillator(); o.type=state.wave; o.frequency.value=mtof(m); o.detune.value=det;
+        const g=ac.createGain(); g.gain.value=per*(i===0?.8:1)*hard;
+        o.connect(g).connect(this.f); o.start(); this.oscs.push(o);
+      }
+    });
+    this.dead=false;
+  }
+  set(lv){ const t=ac.currentTime; this.out.gain.setTargetAtTime(lv,t,.04); this.f.frequency.setTargetAtTime(350+Math.pow(lv,1.5)*6500,t,.06); }
+  release(){
+    if(this.dead) return; this.dead=true;
+    const t=ac.currentTime; this.out.gain.cancelScheduledValues(t); this.out.gain.setTargetAtTime(0,t,.1);
+    this.oscs.forEach(o=>o.stop(t+1.2)); setTimeout(()=>{try{this.out.disconnect()}catch(e){}},1400);
+  }
+}
+const player = {voice:null, idx:-1, level:0};
+function play(idx, level){
+  if (idx<0 || idx>=state.chords.length){ stop(); return; }
+  if (idx!==player.idx || !player.voice){
+    if (player.voice) player.voice.release();
+    player.voice = new Voice(state.chords[idx]); player.idx = idx;
+  }
+  player.level = level; player.voice.set(level);
+}
+function stop(){ if(player.voice) player.voice.release(); player.voice=null; player.idx=-1; player.level=0; }
+function rebuild(){ if(player.voice){ const i=player.idx, l=player.level; stop(); play(i,l); } }
+
+/* ================= canvas ================= */
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), vid=document.getElementById('vid');
+let W=0,H=0;
+function resize(){ const d=Math.min(devicePixelRatio||1,2); W=innerWidth; H=innerHeight; cv.width=W*d; cv.height=H*d; cv.style.width=W+'px'; cv.style.height=H+'px'; ctx.setTransform(d,0,0,d,0,0); }
+addEventListener('resize',resize); resize();
+function coverRect(){ const vw=vid.videoWidth||1280, vh=vid.videoHeight||720, s=Math.max(W/vw,H/vh); return {ox:(W-vw*s)/2, oy:(H-vh*s)/2, dw:vw*s, dh:vh*s}; }
+const toScreen=(lm,R)=>({x:W-(R.ox+lm.x*R.dw), y:R.oy+lm.y*R.dh});
+
+/* fan geometry: angle 0 = straight up, + = clockwise (to the right) */
+function fanGeom(){
+  const R = Math.min(W,H)*state.fanSize;
+  return {cx:W*state.fanX, cy:H*state.fanY, R, r0:R*state.fanInner};
+}
+const toRad = deg => (deg-90)*Math.PI/180;  // canvas angle from "up"-based degrees
+function sectorOf(deg){
+  const n=state.chords.length, a0=state.aLeft, a1=state.aRight;
+  const t=(deg-a0)/(a1-a0);
+  return Math.min(n-1, Math.max(0, Math.floor(t*n)));
+}
+// hysteresis: stay in current sector until we pass the border by hys*sectorWidth
+function sectorWithHys(deg, cur){
+  const n=state.chords.length, a0=state.aLeft, a1=state.aRight, w=(a1-a0)/n;
+  const raw = sectorOf(deg);
+  if (cur<0 || cur>=n || raw===cur) return raw;
+  const lo=a0+cur*w - w*state.hys, hi=a0+(cur+1)*w + w*state.hys;
+  return (deg>=lo && deg<=hi) ? cur : raw;
+}
+
+/* ================= tracking ================= */
+let landmarker=null;
+const statusEl=document.getElementById('status');
+async function initTracking(){
+  statusEl.textContent='손 인식 모델 불러오는 중…';
+  const { FilesetResolver, HandLandmarker } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+  const fs = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+  const o = d=>({baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',delegate:d},
+    runningMode:'VIDEO',numHands:1,minHandDetectionConfidence:.5,minHandPresenceConfidence:.5,minTrackingConfidence:.5});
+  try{ landmarker=await HandLandmarker.createFromOptions(fs,o('GPU')); }catch(e){ landmarker=await HandLandmarker.createFromOptions(fs,o('CPU')); }
+}
+async function initCamera(){
+  statusEl.textContent='카메라 권한을 허용해 주세요…';
+  vid.srcObject = await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},facingMode:'user'},audio:false});
+  await vid.play();
+}
+const d3=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);
+function opennessRaw(w){
+  const palm=d3(w[0],w[9])||1e-6;
+  const avg=[8,12,16,20].reduce((s,i)=>s+d3(w[i],w[0]),0)/4/palm;
+  return avg*.85 + d3(w[4],w[17])/palm*.15;
+}
+const openToLevel = raw => Math.pow(Math.min(1,Math.max(0,(raw-state.cMin)/Math.max(.05,state.cMax-state.cMin))), state.cCurve);
+/* hand roll: wrist -> (index MCP + pinky MCP)/2 direction, in mirrored screen space.
+   Uses MCPs (not fingertips) so closing the fist doesn't change the angle. */
+function handAngle(lm,R){
+  const w=toScreen(lm[0],R), a=toScreen(lm[5],R), b=toScreen(lm[17],R), m=toScreen(lm[9],R);
+  const tx=(a.x+b.x+m.x*2)/4, ty=(a.y+b.y+m.y*2)/4;
+  return Math.atan2(tx-w.x, -(ty-w.y))*180/Math.PI;  // 0 = up, + = clockwise
+}
+
+/* ================= loop ================= */
+const HAND_CONN=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+let lastT=-1, res=null;
+const sm={ang:0, lv:0, raw:0, init:false, idx:-1, lostAt:0};
+let mouse=null; // {idx}
+
+function frame(){
+  requestAnimationFrame(frame);
+  const R=coverRect();
+  ctx.clearRect(0,0,W,H);
+  if (vid.readyState>=2){
+    ctx.save(); ctx.translate(W,0); ctx.scale(-1,1); ctx.globalAlpha=.5; ctx.drawImage(vid,R.ox,R.oy,R.dw,R.dh); ctx.restore();
+    ctx.fillStyle='rgba(8,9,12,.42)'; ctx.fillRect(0,0,W,H);
+  }
+  if (landmarker && vid.readyState>=2 && vid.currentTime!==lastT){
+    lastT=vid.currentTime; try{ res=landmarker.detectForVideo(vid,performance.now()); }catch(e){}
+  }
+  const lm = res?.landmarks?.[0];
+  if (lm){
+    const wl = res.worldLandmarks?.[0] || lm;
+    const ang = handAngle(lm,R), raw = opennessRaw(wl), lv = openToLevel(raw);
+    if (!sm.init){ sm.ang=ang; sm.raw=raw; sm.lv=lv; sm.init=true; }
+    sm.ang += (ang-sm.ang)*.45; sm.raw += (raw-sm.raw)*.35; sm.lv += (lv-sm.lv)*.35;
+    sm.idx = sectorWithHys(sm.ang, sm.idx);
+    drawHand(lm,R);
+    sm.lostAt = 0;
+  } else if (sm.init){
+    if (!sm.lostAt) sm.lostAt = performance.now();
+    if (performance.now()-sm.lostAt > 150){ sm.init=false; sm.idx=-1; }   // short grace for dropped frames
+  }
+
+  if (ac){
+    if (mouse) play(mouse.idx, .75);
+    else if (sm.init) play(sm.idx, sm.lv);
+    else stop();
+  }
+  drawFan();
+  hud();
+}
+
+/* ================= drawing ================= */
+function hexA(h,a){const n=parseInt(h.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;}
+function drawHand(lm,R){
+  const p=lm.map(l=>toScreen(l,R));
+  ctx.lineWidth=2; ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.beginPath();
+  for(const [a,b] of HAND_CONN){ctx.moveTo(p[a].x,p[a].y);ctx.lineTo(p[b].x,p[b].y);} ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.7)'; for(const q of p){ctx.beginPath();ctx.arc(q.x,q.y,2.2,0,Math.PI*2);ctx.fill();}
+}
+function drawFan(){
+  const {cx,cy,R,r0}=fanGeom(), n=state.chords.length, a0=state.aLeft, a1=state.aRight, w=(a1-a0)/n;
+  const activeIdx = player.voice ? player.idx : -1, lv = player.level;
+  // backdrop
+  ctx.save();
+  ctx.fillStyle='rgba(10,12,16,.55)';
+  ctx.beginPath(); ctx.arc(cx,cy,R+14,toRad(a0)-.03,toRad(a1)+.03); ctx.arc(cx,cy,Math.max(0,r0-14),toRad(a1)+.03,toRad(a0)-.03,true); ctx.closePath(); ctx.fill();
+  for (let i=0;i<n;i++){
+    const s=a0+i*w, e=s+w, col=COLORS[i%COLORS.length], on=i===activeIdx;
+    const rr = on ? R + 10*lv : R;
+    ctx.beginPath(); ctx.arc(cx,cy,rr,toRad(s)+.012,toRad(e)-.012); ctx.arc(cx,cy,r0,toRad(e)-.012,toRad(s)+.012,true); ctx.closePath();
+    if (on){ ctx.shadowColor=col; ctx.shadowBlur=20+lv*50; ctx.fillStyle=hexA(col,.25+lv*.5); }
+    else { ctx.shadowBlur=0; ctx.fillStyle=hexA(col, i===selIdx&&editing ? .32 : .14); }
+    ctx.fill(); ctx.shadowBlur=0;
+    ctx.lineWidth = (editing&&i===selIdx)?3:1.5; ctx.strokeStyle=(editing&&i===selIdx)?'#fff':hexA(col,.8); ctx.stroke();
+    // label
+    const mid=toRad(s+w/2), lr=(r0+R)/2+ (R-r0)*.08;
+    const fs=Math.max(14, Math.min(46, (R-r0)*.26, (Math.abs(w)*Math.PI/180)*lr*.42));
+    ctx.fillStyle = on ? '#fff' : 'rgba(255,255,255,.85)';
+    ctx.font=`800 ${fs}px "Pretendard","Apple SD Gothic Neo",system-ui,sans-serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(chordName(state.chords[i]), cx+Math.cos(mid)*lr, cy+Math.sin(mid)*lr);
+  }
+  // needle
+  if (sm.init){
+    const ang = Math.max(a0-8, Math.min(a1+8, sm.ang)), t=toRad(ang);
+    ctx.strokeStyle='#fff'; ctx.lineWidth=4; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(cx+Math.cos(t)*Math.max(0,r0-10), cy+Math.sin(t)*Math.max(0,r0-10)); ctx.lineTo(cx+Math.cos(t)*(R+22), cy+Math.sin(t)*(R+22)); ctx.stroke();
+  }
+  ctx.restore();
+}
+const hChord=document.getElementById('hChord'), hAng=document.getElementById('hAng'), hLv=document.getElementById('hLv'), lvFill=document.getElementById('lvFill');
+const cAngNow=document.getElementById('cAngNow'), cOpenNow=document.getElementById('cOpenNow');
+function hud(){
+  hChord.textContent = player.voice ? chordName(state.chords[player.idx]) : '—';
+  hAng.textContent = sm.init ? Math.round(sm.ang)+'°' : '—';
+  hLv.textContent = sm.init ? Math.round(sm.lv*100)+'%' : '—';
+  lvFill.style.width = (sm.init?sm.lv*100:0)+'%';
+  cAngNow.textContent = sm.init ? Math.round(sm.ang)+'°' : '—';
+  cOpenNow.textContent = sm.init ? sm.raw.toFixed(2) : '—';
+}
+
+/* ================= toolbar ================= */
+function bindSeg(id,key,cast,after){
+  const el=document.getElementById(id);
+  el.querySelectorAll('button').forEach(b=>{
+    b.classList.toggle('on',String(state[key])===b.dataset.v);
+    b.onclick=()=>{ state[key]=cast(b.dataset.v); el.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); save(); after&&after(); };
+  });
+}
+bindSeg('waveSeg','wave',v=>v,rebuild);
+bindSeg('octSeg','octave',Number,rebuild);
+const keyLbl=document.getElementById('keyLbl');
+function syncKey(){
+  const t=T();
+  keyLbl.textContent = NOTE_NAMES[mod12(t)] + (t ? ` (${t>0?'+':''}${t})` : '');
+}
+function setKey(t){
+  state.transpose=Math.max(-12,Math.min(12,t)); save(); syncKey(); rebuild(); if(editing) refreshEditor();
+}
+document.getElementById('keyDown').onclick=()=>setKey(T()-1);
+document.getElementById('keyUp').onclick=()=>setKey(T()+1);
+document.getElementById('keyReset').onclick=()=>setKey(0);
+addEventListener('keydown',e=>{ if(e.key==='[') setKey(T()-1); if(e.key===']') setKey(T()+1); });
+syncKey();
+const rev=document.getElementById('rev'); rev.value=state.reverb; rev.oninput=()=>{state.reverb=+rev.value; setReverb(); save();};
+
+const calib=document.getElementById('calib'), panel=document.getElementById('panel');
+const calibBtn=document.getElementById('calibBtn'), editBtn=document.getElementById('editBtn');
+const calibOpen=()=>calib.classList.contains('show');
+let editing=false, selIdx=0;
+calibBtn.onclick=()=>{ const on=!calibOpen(); calib.classList.toggle('show',on); calibBtn.classList.toggle('on',on);
+  if(on){ editing=false; panel.classList.remove('show'); editBtn.classList.remove('on'); } };
+editBtn.onclick=()=>{ editing=!editing; panel.classList.toggle('show',editing); editBtn.classList.toggle('on',editing);
+  if(editing){ calib.classList.remove('show'); calibBtn.classList.remove('on'); } refreshEditor(); };
+
+const sliders=[['aLeft','oLeft',v=>Math.round(v)+'°'],['aRight','oRight',v=>Math.round(v)+'°'],['hys','oHys',v=>Math.round(v*100)+'%'],
+  ['cMin','oMin',v=>(+v).toFixed(2)],
+  ['fanX','oFanX',v=>Math.round(v*100)+'%'],['fanY','oFanY',v=>Math.round(v*100)+'%'],
+  ['fanSize','oFanSize',v=>Math.round(v*100)+'%'],['fanInner','oFanInner',v=>Math.round(v*100)+'%'],['cMax','oMax',v=>(+v).toFixed(2)],['cCurve','oCurve',v=>(+v).toFixed(2)]];
+function syncSliders(){ for(const [k,o,f] of sliders){ document.getElementById(k).value=state[k]; document.getElementById(o).textContent=f(state[k]); } }
+for(const [k,o,f] of sliders){ document.getElementById(k).oninput=e=>{ state[k]=+e.target.value; document.getElementById(o).textContent=f(state[k]); save(); }; }
+syncSliders();
+document.getElementById('setLeft').onclick=()=>{ if(!sm.init) return; state.aLeft=Math.round(Math.min(sm.ang, state.aRight-20)); syncSliders(); save(); };
+document.getElementById('setRight').onclick=()=>{ if(!sm.init) return; state.aRight=Math.round(Math.max(sm.ang, state.aLeft+20)); syncSliders(); save(); };
+document.getElementById('setFist').onclick=()=>{ if(!sm.init) return; state.cMin=+(sm.raw+.03).toFixed(2); if(state.cMax-state.cMin<.15) state.cMax=state.cMin+.3; syncSliders(); save(); };
+document.getElementById('setOpen').onclick=()=>{ if(!sm.init) return; state.cMax=+(sm.raw-.03).toFixed(2); if(state.cMax-state.cMin<.15) state.cMin=state.cMax-.3; syncSliders(); save(); };
+
+/* ================= chord editor ================= */
+const list=document.getElementById('list'), rootChips=document.getElementById('rootChips'), qualChips=document.getElementById('qualChips');
+NOTE_NAMES.forEach((n,i)=>{ const b=document.createElement('button'); b.textContent=n; b.dataset.v=i;
+  b.onclick=()=>{ state.chords[selIdx].root=mod12(i-T()); changed(); }; rootChips.appendChild(b); });
+Object.keys(QUALITIES).forEach(q=>{ const b=document.createElement('button'); b.textContent=q||'maj'; b.dataset.v=q;
+  b.onclick=()=>{ state.chords[selIdx].q=q; changed(); }; qualChips.appendChild(b); });
+function changed(){ save(); refreshEditor(); stop(); }
+function refreshEditor(){
+  selIdx=Math.min(selIdx,state.chords.length-1);
+  list.innerHTML='';
+  state.chords.forEach((c,i)=>{ const b=document.createElement('button'); b.textContent=chordName(c);
+    b.style.color=COLORS[i%COLORS.length]; b.classList.toggle('on',i===selIdx); b.onclick=()=>{selIdx=i;refreshEditor();}; list.appendChild(b); });
+  const c=state.chords[selIdx];
+  rootChips.querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.v===mod12(c.root+T())));
+  qualChips.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===c.q));
+}
+document.getElementById('addBefore').onclick=()=>{ if(state.chords.length>=12) return; state.chords.splice(selIdx,0,{...state.chords[selIdx]}); changed(); };
+document.getElementById('addAfter').onclick=()=>{ if(state.chords.length>=12) return; state.chords.splice(selIdx+1,0,{...state.chords[selIdx]}); selIdx++; changed(); };
+document.getElementById('delChord').onclick=()=>{ if(state.chords.length<=2) return; state.chords.splice(selIdx,1); selIdx=Math.max(0,selIdx-1); changed(); };
+document.getElementById('moveL').onclick=()=>{ if(selIdx<=0) return; const c=state.chords; [c[selIdx-1],c[selIdx]]=[c[selIdx],c[selIdx-1]]; selIdx--; changed(); };
+document.getElementById('moveR').onclick=()=>{ const c=state.chords; if(selIdx>=c.length-1) return; [c[selIdx+1],c[selIdx]]=[c[selIdx],c[selIdx+1]]; selIdx++; changed(); };
+document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{ state.chords=mk(PRESETS[b.dataset.preset]); selIdx=0; changed(); });
+addEventListener('keydown',e=>{ if(!editing) return;
+  if(e.key==='ArrowLeft'){ selIdx=Math.max(0,selIdx-1); refreshEditor(); }
+  if(e.key==='ArrowRight'){ selIdx=Math.min(state.chords.length-1,selIdx+1); refreshEditor(); }
+});
+refreshEditor();
+
+/* click a sector: select (edit mode) + audition */
+function sectorAt(x,y){
+  const {cx,cy,R,r0}=fanGeom(), d=Math.hypot(x-cx,y-cy);
+  if (d<r0 || d>R+14) return -1;
+  const deg=Math.atan2(x-cx, -(y-cy))*180/Math.PI;
+  if (deg<state.aLeft || deg>state.aRight) return -1;
+  return sectorOf(deg);
+}
+let fanDrag=null;
+cv.addEventListener('pointerdown',e=>{
+  const i=sectorAt(e.clientX,e.clientY); if(i<0) return;
+  if(editing){
+    selIdx=i; refreshEditor();
+    fanDrag={sx:e.clientX, sy:e.clientY, fx:state.fanX, fy:state.fanY, moved:false};
+    cv.setPointerCapture(e.pointerId);
+  }
+  if(ac) mouse={idx:i};
+});
+cv.addEventListener('pointermove',e=>{
+  if(!fanDrag) return;
+  const dx=e.clientX-fanDrag.sx, dy=e.clientY-fanDrag.sy;
+  if(!fanDrag.moved && Math.hypot(dx,dy)>6){ fanDrag.moved=true; if(mouse){ mouse=null; stop(); } }
+  if(fanDrag.moved){
+    state.fanX=Math.min(1,Math.max(0,fanDrag.fx+dx/W));
+    state.fanY=Math.min(1,Math.max(0,fanDrag.fy+dy/H));
+    syncSliders();
+  }
+});
+cv.addEventListener('wheel',e=>{
+  if(!editing) return; e.preventDefault();
+  state.fanSize=Math.min(1.2,Math.max(0.15,state.fanSize*(e.deltaY<0?1.05:1/1.05)));
+  syncSliders(); save();
+},{passive:false});
+document.getElementById('fanReset').onclick=()=>{ Object.assign(state,{fanX:.5,fanY:.86,fanSize:.62,fanInner:.34}); syncSliders(); save(); };
+const up=()=>{ if(fanDrag){ if(fanDrag.moved) save(); fanDrag=null; } if(mouse){ mouse=null; stop(); } };
+cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up);
+
+/* ================= start ================= */
+document.getElementById('go').onclick=async()=>{
+  const btn=document.getElementById('go'); btn.disabled=true;
+  try{ initAudio(); await ac.resume(); await initCamera(); await initTracking(); document.getElementById('start').style.display='none'; }
+  catch(err){ console.error(err); btn.disabled=false;
+    statusEl.textContent = err?.name==='NotAllowedError' ? '카메라 권한이 거부되었습니다. 주소창의 카메라 아이콘에서 허용해 주세요.' : '시작하지 못했습니다: '+(err?.message||err)+' (Chrome에서 열어주세요)'; }
+};
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
